@@ -1,0 +1,91 @@
+## 简介 ##
+[AVSDK](https://www.qcloud.com/product/ilvb.html)是腾讯官方提供的“多路音视频实时互动“解决方案，提供完整的音视频流通道，U图SDK用于人脸识别，P图SDK用语视频数据的个性化处理(滤镜，美颜等)，将这三者结合起来，就形成了互动直播中视频数据的个性化预处理。
+
+## 数据处理流程图 ##
+
+![](http://img.blog.csdn.net/20160902111755287)
+
+## 实现方式 ##
+
+### 1、接入P图SDK ###
+
+> P图SDK结构如下:
+```
+├─aar
+│      module_video.aar
+│
+└─armeabi
+        libalgo_youtu_jni.so
+        libformat_convert.so
+        libgetframe.so
+        libijkffmpeg.so
+        libimage_filter_common.so
+        libimage_filter_gpu.so
+        libpitu_tools.so
+        libsumit_jni.so
+```
+
+> 将SDK加入工程的libs目录，修改根目录下build.gradle:
+```
+allprojects{
+    repositories{
+        flatDir{
+            dirs 'libs'
+        }
+    }
+}
+```
+> 同时在工程中build.gradle中添加:
+```
+dependencies{
+    compile(name: 'module_video', ext: 'aar')
+    compile files('libs/filterengine.bundle.jar')
+}
+```
+> 拷贝素材以及licence（以up.licence为例）到asserts目录
+> 由于需要引入NDK，所以需要在gradle.properties中加入 `android.useDeprecatedNdk=true `
+
+
+### 2、SDK使用 ###
+#### 初始化 ####
+```
+    VideoModule.init(getApplicationContext());
+    YTSampleSDK.getInstance().init(getApplicationContext(), false, "up.licence");
+```
+>**注: licence与package(applicationId)绑定，必须一致，否则无法使用**
+> 
+> 可以使用Demo中的`NativeProperty.java`和`FilterUtils.java`完成加载，但这两个文件必须在包`com.tencent.ttpic.util`里面
+> 然后使用`FilterUtils.checkLibraryInit()`加载
+> 
+> **注: so必须在初始化之后加载，否则会无法使用**
+
+#### 采集 ####
+> P图的数据采集需使用Android系统自带的Camera,
+> 这里预览可以使用P图sdk中的`CameraViewTex`控件
+> 具体步骤如下: 
+> 
+> 1、打开摄像头(使用系统接口即可)，同时通过AVSDK的`enableExternalCapture`打开摄像头(更新AVSDK状态)
+> 
+> 2、添加`CameraViewTex`的`setCameraInitListener`方法，在`surfaceview`创建成功时，设置预览的`SurfaceTexture`
+> 
+> 3、设置数据回调`addRetrieveDatalistener`，这里设置需要的数据为YUV420格式
+> 
+> 4、在收到视频数据时，通用AVSDK的`fillExternalCaptureFrame`方法发布
+
+#### P图处理 ####
+> 如果本地没有素材，则需要先下载，下载成功后，通过`VideoTemplateParser`的`parseVideoMaterial`生成`VideoMaterial`对象
+> 然后通过`CameraViewTex`的`setVideoFilter`方法设置处理素材即可
+
+#### 角度调整 ####
+> 摄像机在打开时，根据机型不同，需要设置偏转角度，这里只需要在发布时保持一致即可:
+```
+mCamera = Camera.open(cameraId);
+mCamera.setDisplayOrientation(90);
+```
+> 如上面摄像头在预览时需要偏转90度，则在发布时同样要相反的偏转(360-90):
+```
+// 图像需要旋转270度
+avVideoCtrl.fillExternalCaptureFrame(data, data.length,
+    mCameraSize.width, mCameraSize.height, 3, AVVideoCtrl.COLOR_FORMAT_I420, AVView.VIDEO_SRC_TYPE_CAMERA);
+```
+
